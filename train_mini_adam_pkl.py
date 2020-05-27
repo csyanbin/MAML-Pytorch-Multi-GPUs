@@ -12,6 +12,7 @@ import plot
 import json
 import time
 from    copy import deepcopy
+from dataset_mini import *
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--epoch', type=int, help='epoch number', default=600000)
@@ -36,7 +37,7 @@ class Param:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     data_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/data/miniImagenet/'
     #out_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/output/adam_clip/'
-    out_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/output/adam_clip_600epoch1/'
+    out_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/output/adam_clip_pkl/'
     #root = '/home/haoran/meta/miniimagenet/'
     #root = '/storage/haoran/miniimagenet/'
     #root = '/disk/0/storage/haoran/miniimagenet/'
@@ -95,15 +96,21 @@ def main():
     print(maml)
     print('Total trainable tensors:', num)
 
-    trainset = MiniImagenet(Param.root, mode='train', n_way=args.n_way, k_shot=args.k_spt, k_query=args.k_qry, resize=args.imgsz)
-    testset = MiniImagenet(Param.root, mode='test', n_way=args.n_way, k_shot=args.k_spt, k_query=args.k_qry, resize=args.imgsz)
-    trainloader = DataLoader(trainset, batch_size=args.task_num, shuffle=True, num_workers=4, drop_last=True)
-    testloader = DataLoader(testset, batch_size=4, shuffle=True, num_workers=4, drop_last=True)
-    train_data = inf_get(trainloader)
-    test_data = inf_get(testloader)
+    # Load pkl dataset   
+    args_data = {}
+    args_data['x_dim'] = "84,84,3"
+    args_data['ratio'] = 1.0
+    args_data['seed'] = 222
+    loader_train = dataset_mini(600, 100, 'train', args_data)
+    #loader_val   = dataset_mini(600, 100, 'val', args_data)
+    loader_test  = dataset_mini(600, 100, 'test', args_data)
+    
+    loader_train.load_data_pkl()
+    #loader_val.load_data_pkl()
+    loader_test.load_data_pkl()
 
     for epoch in range(args.epoch):
-        support_x, support_y, meta_x, meta_y = train_data.__next__()
+        support_x, support_y, meta_x, meta_y = get_data(loader_train)
         support_x, support_y, meta_x, meta_y = support_x.to(Param.device), support_y.to(Param.device), meta_x.to(Param.device), meta_y.to(Param.device)
         meta_loss = maml(support_x, support_y, meta_x, meta_y).mean()
         opt.zero_grad()
@@ -116,7 +123,7 @@ def main():
             ans = None
             maml_clone = deepcopy(maml)
             for _ in range(600):
-                support_x, support_y, qx, qy = test_data.__next__()
+                support_x, support_y, qx, qy = get_data(loader_test)
                 support_x, support_y, qx, qy = support_x.to(Param.device), support_y.to(Param.device), qx.to(Param.device), qy.to(Param.device)
                 temp = maml_clone(support_x, support_y, qx, qy, meta_train = False)
                 if(ans is None):

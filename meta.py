@@ -176,6 +176,14 @@ class Meta(nn.Module):
         self.net.zero_grad()
         grad = autograd.grad(loss, self.net.parameters(), create_graph=True)
         fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, self.net.parameters())))
+        """Do not update BN params in inner loop"""
+        #fast_weights = []
+        #for p in zip(grad, self.net.named_parameters()):
+        #    if 'bn' not in p[1][0]:
+        #        fast_weights.append(p[1][1]-self.update_lr*p[0])
+        #    else:
+        #        fast_weights.append(p[1][1])
+
         meta_loss.append(F.cross_entropy(self.net(meta_x, vars=fast_weights), meta_y))
         for k in range(1, self.update_step):
             out = self.net(support_x, vars = fast_weights)
@@ -183,6 +191,13 @@ class Meta(nn.Module):
             self.net.zero_grad(vars = fast_weights)
             grad = autograd.grad(loss, fast_weights, create_graph=True)
             fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
+            """Do not update BN params in inner loop"""
+            #fast_weights = []
+            #for p in zip(grad, self.net.named_parameters()):
+            #    if 'bn' not in p[1][0]:
+            #        fast_weights.append(p[1][1]-self.update_lr*p[0])
+            #    else:
+            #        fast_weights.append(p[1][1])
             meta_loss.append(F.cross_entropy(self.net(meta_x, vars=fast_weights), meta_y))
         return meta_loss
             
@@ -224,6 +239,13 @@ class Meta(nn.Module):
                     self.net.zero_grad(vars = fast_weights)
                     grad = autograd.grad(loss, fast_weights)
                     fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))    
+                    """Do not update BN params in inner loop"""
+                    #fast_weights = []
+                    #for p in zip(grad, self.net.named_parameters()):
+                    #    if 'bn' not in p[1][0]:
+                    #        fast_weights.append(p[1][1]-self.update_lr*p[0])
+                    #    else:
+                    #        fast_weights.append(p[1][1])
 
                     out_q = self.net(qx[task_id], vars = fast_weights)
                     __, predicted = out_q.max(1)
@@ -237,30 +259,30 @@ class Meta(nn.Module):
             return ans
 
 
-    # def finetunning(self, support_x, support_y, qx, qy):
-    #     """
-    #     :param support_x:   [setsz,   c_, h, w]
-    #     :param support_y:   [setsz  ]
-    #     :param qx:          [querysz, c_, h, w]
-    #     :param qy:          [querysz]
-    #     :return:            acc
-    #     """
-    #     assert(len(support_x.shape) == 4)
-    #     querysz = qx.size(0)
-    #     net = deepcopy(self.net)
-    #     fast_weights = net.parameters()
-    #     acc = []
-    #     for __ in range(self.update_step_test):
-    #         out = net(support_x, vars = fast_weights)
-    #         loss = F.cross_entropy(out, support_y)
-    #         net.zero_grad(vars = fast_weights)
-    #         grad = autograd.grad(loss, fast_weights)
-    #         fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
+    def finetunning(self, support_x, support_y, qx, qy):
+        """
+        :param support_x:   [setsz,   c_, h, w]
+        :param support_y:   [setsz  ]
+        :param qx:          [querysz, c_, h, w]
+        :param qy:          [querysz]
+        :return:            acc
+        """
+        assert(len(support_x.shape) == 4)
+        querysz = qx.size(0)
+        net = deepcopy(self.net)
+        fast_weights = net.parameters()
+        acc = []
+        for __ in range(self.update_step_test):
+            out = net(support_x, vars = fast_weights)
+            loss = F.cross_entropy(out, support_y)
+            net.zero_grad(vars = fast_weights)
+            grad = autograd.grad(loss, fast_weights)
+            fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
 
-    #         out_q = net(qx, vars = fast_weights)
-    #         _, predicted = out_q.max(1)
-    #         correct = predicted.eq(qy).sum().item()
-    #         acc.append(correct/querysz)
-    #     del net
-    #     return torch.FloatTensor(acc)
+            out_q = net(qx, vars = fast_weights)
+            _, predicted = out_q.max(1)
+            correct = predicted.eq(qy).sum().item()
+            acc.append(correct/querysz)
+        del net
+        return torch.FloatTensor(acc)
 

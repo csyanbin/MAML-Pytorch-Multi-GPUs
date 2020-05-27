@@ -46,7 +46,8 @@ class MiniImagenet(Dataset):
         mode, n_way, k_shot, k_query, resize))
 
         if mode == 'train':
-            self.transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
+            self.transform = transforms.Compose([
+                                                 #lambda x: Image.open(x).convert('RGB'),
                                                  transforms.Resize((self.resize, self.resize)),
                                                  # transforms.RandomHorizontalFlip(),
                                                  # transforms.RandomRotation(5),
@@ -54,7 +55,8 @@ class MiniImagenet(Dataset):
                                                  transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
                                                  ])
         else:
-            self.transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
+            self.transform = transforms.Compose([
+                                                 #lambda x: Image.open(x).convert('RGB'),
                                                  transforms.Resize((self.resize, self.resize)),
                                                  transforms.ToTensor(),
                                                  transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
@@ -64,12 +66,16 @@ class MiniImagenet(Dataset):
         self.lines = pd.read_csv(os.path.join(root, mode + '.csv'))
         print(len(self.lines))
         csvdata = self.loadCSV()
-        self.data = []
-        self.img2label = {}
+        self.images = [[]]*len(csvdata)
         for i, (k, v) in enumerate(csvdata.items()):
-            self.data.append(v)  # [[img1, img2, ...], [img111, ...]]
-            self.img2label[k] = i + self.startidx  # {"img_name[:9]":label}
-        self.cls_num = len(self.data)
+            # [[im11,im12,...],[im21,im22,...],[imn1,imn2,...]]
+            for j,name in enumerate(v): # load all images
+                img = Image.open(os.path.join(self.path, name)).resize((84,84)).convert('RGB')
+                if j==0:
+                    self.images[i] = [img]
+                else:
+                    self.images[i].append(img)
+        self.cls_num = len(csvdata)
 
     def loadCSV(self):
         dictLabels = {}
@@ -95,15 +101,15 @@ class MiniImagenet(Dataset):
         sup_pos = 0
         meta_pos = 0
         for idx, cls in enumerate(selected_cls):
-            selected_imgs_idx = np.random.choice(len(self.data[cls]), self.k_shot + self.k_query, False)
+            selected_imgs_idx = np.random.choice(len(self.images[cls]), self.k_shot + self.k_query, False)
             for i in range(self.k_shot):
-                temp_path = os.path.join(self.path, self.data[cls][selected_imgs_idx[i]])
-                support_x[sup_pos] = self.transform(temp_path)
+                img = self.images[cls][selected_imgs_idx[i]]
+                support_x[sup_pos] = self.transform(img)
                 support_y[sup_pos] = idx
                 sup_pos += 1
             for i in range(self.k_shot, self.k_shot + self.k_query):
-                temp_path = os.path.join(self.path, self.data[cls][selected_imgs_idx[i]])
-                meta_x[meta_pos] = self.transform(temp_path)
+                img = self.images[cls][selected_imgs_idx[i]]
+                meta_x[meta_pos] = self.transform(img)
                 meta_y[meta_pos] = idx
                 meta_pos += 1
         return (support_x, support_y, meta_x, meta_y)

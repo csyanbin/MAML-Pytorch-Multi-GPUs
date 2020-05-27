@@ -36,7 +36,7 @@ class Param:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     data_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/data/miniImagenet/'
     #out_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/output/adam_clip/'
-    out_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/output/adam_clip_600epoch1/'
+    out_path = '/mnt/aitrics_ext/ext01/yanbin/MAML-Pytorch-Multi-GPUs/output/adam_clip_single22/'
     #root = '/home/haoran/meta/miniimagenet/'
     #root = '/storage/haoran/miniimagenet/'
     #root = '/disk/0/storage/haoran/miniimagenet/'
@@ -82,6 +82,7 @@ def main():
     torch.manual_seed(222)
     torch.cuda.manual_seed_all(222)
     np.random.seed(222)
+    val_result = {}
     test_result = {}
     best_acc = 0.0
 
@@ -96,10 +97,13 @@ def main():
     print('Total trainable tensors:', num)
 
     trainset = MiniImagenet(Param.root, mode='train', n_way=args.n_way, k_shot=args.k_spt, k_query=args.k_qry, resize=args.imgsz)
+    valset = MiniImagenet(Param.root, mode='val', n_way=args.n_way, k_shot=args.k_spt, k_query=args.k_qry, resize=args.imgsz)
     testset = MiniImagenet(Param.root, mode='test', n_way=args.n_way, k_shot=args.k_spt, k_query=args.k_qry, resize=args.imgsz)
     trainloader = DataLoader(trainset, batch_size=args.task_num, shuffle=True, num_workers=4, drop_last=True)
+    valloader = DataLoader(valset, batch_size=4, shuffle=True, num_workers=4, drop_last=True)
     testloader = DataLoader(testset, batch_size=4, shuffle=True, num_workers=4, drop_last=True)
     train_data = inf_get(trainloader)
+    val_data = inf_get(valloader)
     test_data = inf_get(testloader)
 
     for epoch in range(args.epoch):
@@ -112,11 +116,11 @@ def main():
         opt.step()
         plot.plot('meta_loss', meta_loss.item())
 
-        if(epoch % 2000 == 999):
+        if(epoch % 2500 == 0 and epoch > 0):
             ans = None
             maml_clone = deepcopy(maml)
-            for _ in range(600):
-                support_x, support_y, qx, qy = test_data.__next__()
+            for _ in range(600): # 100x4 val tasks
+                support_x, support_y, qx, qy = val_data.__next__()
                 support_x, support_y, qx, qy = support_x.to(Param.device), support_y.to(Param.device), qx.to(Param.device), qy.to(Param.device)
                 temp = maml_clone(support_x, support_y, qx, qy, meta_train = False)
                 if(ans is None):
@@ -124,15 +128,33 @@ def main():
                 else:
                     ans = torch.cat([ans, temp], dim = 0)
             ans = ans.mean(dim = 0).tolist()
-            test_result[epoch] = ans
+            val_result[epoch] = ans
+            print('val, ', str(epoch) + ': '+str(ans))
             if (ans[-1] > best_acc):
                 best_acc = ans[-1]
                 torch.save(maml.state_dict(), Param.out_path + 'net_'+ str(epoch) + '_' + str(best_acc) + '.pkl') 
+
+                # Test
+                ans = None
+                maml_clone = deepcopy(maml)
+                for _ in range(600): # 100x4 test tasks
+                    support_x, support_y, qx, qy = test_data.__next__()
+                    support_x, support_y, qx, qy = support_x.to(Param.device), support_y.to(Param.device), qx.to(Param.device), qy.to(Param.device)
+                    temp = maml_clone(support_x, support_y, qx, qy, meta_train = False)
+                    if(ans is None):
+                        ans = temp
+                    else:
+                        ans = torch.cat([ans, temp], dim = 0)
+                ans = ans.mean(dim = 0).tolist()
+                test_result[epoch] = ans
+                print('test, ', str(epoch) + ': '+str(ans))
+                with open(Param.out_path+'test.json','w') as f:
+                    json.dump(test_result,f)
+
             del maml_clone
-            print(str(epoch) + ': '+str(ans))
-            with open(Param.out_path+'test.json','w') as f:
-                json.dump(test_result,f)
-        if (epoch < 5) or (epoch % 100 == 99):
+            with open(Param.out_path+'val.json','w') as f:
+                json.dump(val_result,f)
+        if (epoch < 5) or (epoch % 100 == 0):
             plot.flush()
         plot.tick()
 
